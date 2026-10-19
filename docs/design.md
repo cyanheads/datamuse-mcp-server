@@ -69,6 +69,8 @@ Full response: preserve every returned row and metadata field. Sparse response: 
 
 When the limit is reached below 1000, name the actual tool in: “The requested result limit was reached; more matches may exist. Re-run <tool> with a larger limit, up to 1000, or refine constraints with datamuse_find_words.” At limit 1000, use: “The API result ceiling of 1000 was reached; more matches may exist, but no continuation is available. Refine meaning, spelling, or relation constraints with datamuse_find_words to explore a narrower set.” Never suggest raising a limit already at its ceiling.
 
+The three search tools use the linter's scoped `truncationAllowlist` because its recognized `truncated`/`totalCount` fields would imply facts the upstream does not provide. Their `limitReached` and `notice` contract discloses the cap on both output surfaces; contract tests cover empty, under-cap, capped, and 1000-row responses.
+
 ## Tools — detail
 
 ### datamuse_find_rhymes
