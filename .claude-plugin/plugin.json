@@ -1,0 +1,24 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-plugin-manifest.json",
+  "name": "datamuse-mcp-server",
+  "version": "0.1.0",
+  "description": "Find rhymes, synonyms, sound-alikes, spelling matches, and word associations with Datamuse via MCP. STDIO or Streamable HTTP.",
+  "author": {
+    "name": "cyanheads",
+    "email": "casey@caseyjhand.com",
+    "url": "https://github.com/cyanheads"
+  },
+  "homepage": "https://github.com/cyanheads/datamuse-mcp-server#readme",
+  "repository": "https://github.com/cyanheads/datamuse-mcp-server",
+  "license": "Apache-2.0",
+  "keywords": ["mcp", "mcp-server", "model-context-protocol", "ai-agents", "ai-tools", "typescript", "cyanheads", "datamuse", "rhymes", "synonyms", "word-finding"],
+  "mcpServers": {
+    "datamuse-mcp-server": {
+      "command": "npx",
+      "args": ["-y", "@cyanheads/datamuse-mcp-server"],
+      "env": {
+        "MCP_TRANSPORT_TYPE": "stdio"
+      }
+    }
+  }
+}

@@ -1,0 +1,25 @@
+{
+  "name": "datamuse-mcp-server",
+  "version": "0.1.0",
+  "description": "Find rhymes, synonyms, sound-alikes, spelling matches, and word associations with Datamuse via MCP. STDIO or Streamable HTTP.",
+  "author": {
+    "name": "cyanheads",
+    "email": "casey@caseyjhand.com",
+    "url": "https://github.com/cyanheads"
+  },
+  "homepage": "https://github.com/cyanheads/datamuse-mcp-server#readme",
+  "repository": "https://github.com/cyanheads/datamuse-mcp-server",
+  "license": "Apache-2.0",
+  "keywords": ["mcp", "mcp-server", "model-context-protocol", "ai-agents", "ai-tools", "typescript", "cyanheads", "datamuse", "rhymes", "synonyms", "word-finding"],
+  "mcpServers": "./.codex-plugin/mcp.json",
+  "interface": {
+    "displayName": "datamuse-mcp-server",
+    "shortDescription": "Find rhymes, synonyms, sound-alikes, spelling matches, and word associations with Datamuse via MCP. STDIO or Streamable HTTP.",
+    "longDescription": "Find words for poems, prose, puzzles, and naming tasks using Datamuse's lexical query engine. Combine meaning, sound, and spelling constraints, inspect syllable counts and word frequency, and distinguish dictionary relations from corpus associations.",
+    "developerName": "cyanheads",
+    "category": "writing",
+    "capabilities": ["Read"],
+    "websiteURL": "https://github.com/cyanheads/datamuse-mcp-server",
+    "defaultPrompt": []
+  }
+}

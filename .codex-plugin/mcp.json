@@ -1,0 +1,9 @@
+{
+  "datamuse-mcp-server": {
+    "command": "npx",
+    "args": ["-y", "@cyanheads/datamuse-mcp-server"],
+    "env": {
+      "MCP_TRANSPORT_TYPE": "stdio"
+    }
+  }
+}
