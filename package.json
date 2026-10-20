@@ -1,6 +1,6 @@
 {
   "name": "@cyanheads/datamuse-mcp-server",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "mcpName": "io.github.cyanheads/datamuse-mcp-server",
   "description": "Find rhymes, synonyms, sound-alikes, spelling matches, and word associations with Datamuse via MCP. STDIO or Streamable HTTP.",
   "author": "Casey Hand <casey@caseyjhand.com> (https://caseyjhand.com)",
