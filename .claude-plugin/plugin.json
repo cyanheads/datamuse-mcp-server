@@ -11,7 +11,7 @@
   "homepage": "https://github.com/cyanheads/datamuse-mcp-server#readme",
   "repository": "https://github.com/cyanheads/datamuse-mcp-server",
   "license": "Apache-2.0",
-  "keywords": ["mcp", "mcp-server", "model-context-protocol", "ai-agents", "ai-tools", "typescript", "cyanheads", "datamuse", "rhymes", "synonyms", "word-finding"],
+  "keywords": ["mcp", "mcp-server", "model-context-protocol", "ai-agents", "ai-tools", "typescript", "bun", "stdio", "streamable-http", "cyanheads", "datamuse", "rhymes", "synonyms", "word-finding"],
   "mcpServers": {
     "datamuse-mcp-server": {
       "command": "npx",

@@ -1,6 +1,6 @@
 # datamuse-mcp-server - Directory Structure
 
-Generated on: 2026-10-19 23:52:18
+Generated on: 2026-10-20 00:02:32
 
 ```text
 datamuse-mcp-server/
@@ -134,10 +134,6 @@ datamuse-mcp-server/
 │   └── tree.ts
 ├── src/
 │   ├── mcp-server/
-│   │   ├── prompts/
-│   │   │   └── definitions/
-│   │   ├── resources/
-│   │   │   └── definitions/
 │   │   └── tools/
 │   │       └── definitions/
 │   │           ├── find-rhymes.tool.ts
@@ -152,14 +148,9 @@ datamuse-mcp-server/
 │   │       └── types.ts
 │   └── index.ts
 ├── tests/
-│   ├── fuzz/
-│   ├── integration/
-│   ├── prompts/
-│   ├── resources/
 │   ├── services/
 │   │   ├── datamuse-service.test.ts
 │   │   └── serialization.test.ts
-│   ├── smoke/
 │   └── tools/
 │       ├── list-reference.tool.test.ts
 │       └── search-tools.test.ts
@@ -178,6 +169,7 @@ datamuse-mcp-server/
 ├── LICENSE
 ├── manifest.json
 ├── package.json
+├── README.md
 ├── server.json
 ├── tsconfig.build.json
 ├── tsconfig.json
