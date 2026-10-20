@@ -47,6 +47,21 @@ afterEach(() => {
 });
 
 describe('Datamuse service response validation', () => {
+  it('fetches the bounded offset prefix without dropping metadata before tool selection', async () => {
+    const words = [{ word: 'flower', tags: ['pron: F L AW1 ER0 ', 'ipa_pron:fɫˈaʊɝ'] }];
+    const fetch = vi.fn().mockResolvedValue(Response.json(words));
+    vi.stubGlobal('fetch', fetch);
+    await expect(
+      service.search(
+        { ...query, offset: 990, limit: Number.MAX_SAFE_INTEGER, include_ipa: true },
+        createMockContext(),
+        tool,
+      ),
+    ).resolves.toEqual({ words });
+    expect(
+      Object.fromEntries(new URL(String(fetch.mock.calls[0]?.[0])).searchParams),
+    ).toMatchObject({ max: '1000', md: 'psfr', ipa: '1' });
+  });
   it('preserves order, sparse rows, empty metadata, and arbitrary nested JSON', async () => {
     const words = [
       {

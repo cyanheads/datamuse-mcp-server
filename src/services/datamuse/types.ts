@@ -33,13 +33,35 @@ export const searchInputFields = {
     .number()
     .int()
     .min(1)
-    .max(1000)
     .default(20)
-    .describe('Maximum returned words, 1–1000; no pagination or total count is available.'),
+    .describe(
+      'Positive safe-integer row limit, default 20; values above 1000 are clamped and disclosed. Whole rows may be cut by the response byte budget.',
+    ),
+  offset: z
+    .number()
+    .int()
+    .min(0)
+    .max(999)
+    .default(0)
+    .describe(
+      'Best-effort row offset, 0–999; re-runs the query, so rankings may change. No snapshot or total count.',
+    ),
   include_definitions: z
     .boolean()
     .default(false)
     .describe('Include upstream definitions; senses may make the response substantially larger.'),
+  include_pronunciation: z
+    .boolean()
+    .default(false)
+    .describe(
+      'Request raw pronunciation tags; ARPAbet stress digits are 0 unstressed, 1 primary, 2 secondary. May be guessed or omitted.',
+    ),
+  include_ipa: z
+    .boolean()
+    .default(false)
+    .describe(
+      'Request IPA tags and imply pronunciation; raw ARPAbet and IPA tags may both be returned.',
+    ),
 };
 /** Optional related meaning constraint. */
 export const meansLikeSchema = z
@@ -53,7 +75,7 @@ export const spelledLikeSchema = z
   .max(200)
   .optional()
   .describe(
-    'Spelling constraint, at most 200 characters; * matches any length and ? one character; blank means unset.',
+    'Upstream spelling pattern, at most 200 characters: * any length, ? one character, //listen anagrams (including phrases), @ English vowel including y, # consonant, +letters restricts allowed letters (repeats/spaces possible), -letters excludes letters. Without syntax, similar spellings. Blank means unset.',
   );
 /** Required lexical target. */
 export const wordSchema = z
@@ -105,18 +127,34 @@ export type WordResult = z.infer<typeof wordResultSchema>;
 /** Normalized domain query; arbitrary URL and parameter keys are unavailable. */
 export interface DatamuseQuery {
   include_definitions: boolean;
+  include_ipa?: boolean;
+  include_pronunciation?: boolean;
   left_context?: string;
   limit: number;
   means_like?: string;
+  offset?: number;
   relations?: { relation: keyof typeof RELATION_CODES; word: string }[];
+  requestedLimit?: number;
   right_context?: string;
   sounds_like?: string;
   spelled_like?: string;
   topics?: string[];
   vocabulary: 'en' | 'es';
 }
+/** Resolve metadata once for URL construction and the effective query echo. */
+export function metadataOptions(
+  query: Pick<DatamuseQuery, 'include_definitions' | 'include_pronunciation' | 'include_ipa'>,
+) {
+  return {
+    include_pronunciation: Boolean(query.include_pronunciation || query.include_ipa),
+    include_ipa: Boolean(query.include_ipa),
+    metadata: `psf${query.include_definitions ? 'd' : ''}${query.include_pronunciation || query.include_ipa ? 'r' : ''}`,
+    ...(query.include_ipa ? { ipa: 1 as const } : {}),
+  };
+}
 /** Calling tool used only in authored recovery text. */
 export type SearchToolName =
+  | 'datamuse_get_word_info'
   | 'datamuse_find_rhymes'
   | 'datamuse_find_synonyms'
   | 'datamuse_find_words';

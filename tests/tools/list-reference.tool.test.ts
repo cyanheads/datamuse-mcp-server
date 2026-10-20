@@ -47,7 +47,17 @@ describe('datamuse_list_reference', () => {
     expect(data.sections[1]?.text).toContain('ipa=1');
     expect(data.sections[2]?.text).toContain('conjunction, not a union');
     expect(data.sections[3]?.text).toContain('January 1 and February 1');
-    expect(data.sections[3]?.text).toContain('no continuation, pagination');
+    expect(data.sections[3]?.text).toContain('no continuation beyond index 999');
+    expect(data.sections[0]?.text).toContain('Phrase relations may have limited coverage');
+    expect(data.sections[1]?.text).toContain(
+      '0 unstressed, 1 primary stress, and 2 secondary stress',
+    );
+    expect(data.sections[1]?.text).toContain('include_ipa implies pronunciation');
+    for (const pattern of ['//listen', 'c@t', 's#@p', '*+abc', 'b????-e', 'hipopatamus'])
+      expect(data.sections[2]?.text).toContain(pattern);
+    expect(data.sections[2]?.text).toContain('including y');
+    expect(data.sections[2]?.text).toContain('neither requires every listed letter');
+    expect(data.sections[3]?.text).toContain('64,000-byte budget');
   });
 
   it.each([{ topic: 'unknown' }, { topic: 'ALL' }, { extra: true }])(

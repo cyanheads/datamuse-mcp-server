@@ -5,19 +5,24 @@
 import { tool, z } from '@cyanheads/mcp-ts-core';
 import { JsonRpcErrorCode } from '@cyanheads/mcp-ts-core/errors';
 import { getDatamuseService } from '../../../services/datamuse/datamuse-service.js';
-import { renderJson } from '../../../services/datamuse/serialization.js';
 import {
   type DatamuseQuery,
   searchInputFields,
   searchOutputSchema,
   wordSchema,
 } from '../../../services/datamuse/types.js';
-import { searchContext, searchEnrichment, searchEnrichmentTrailer } from './search-support.js';
+import {
+  searchContent,
+  searchControls,
+  searchEnrichment,
+  searchEnrichmentTrailer,
+  selectSearchPage,
+} from './search-support.js';
 
 /** Find English synonyms, antonyms, broader categories, or narrower kinds of a word. */
 export const findSynonymsTool = tool('datamuse_find_synonyms', {
   description:
-    'Find English synonyms, antonyms, broader categories, or narrower kinds of a word. Broader returns direct hypernyms and narrower returns direct hyponyms. Preserve Datamuse ranking; frequency metadata does not determine ordering. Empty results succeed; limits have no continuation.',
+    'Find English synonyms, antonyms, broader categories, or narrower kinds of a word. Broader returns direct hypernyms and narrower returns direct hyponyms. Preserve Datamuse ranking; frequency metadata does not determine ordering. Empty results succeed; best-effort offsets re-run the query under a whole-row byte budget.',
   annotations: { readOnlyHint: true, idempotentHint: true, openWorldHint: true },
   input: z
     .object({
@@ -126,22 +131,20 @@ export const findSynonymsTool = tool('datamuse_find_synonyms', {
   ],
   async handler(input, ctx) {
     const query: DatamuseQuery = {
-      limit: input.limit,
-      include_definitions: input.include_definitions,
+      ...searchControls(input),
       vocabulary: 'en',
       relations: [{ relation: input.relation, word: input.word.trim() }],
     };
     const result = await getDatamuseService().search(query, ctx, 'datamuse_find_synonyms');
-    ctx.enrich(
-      searchContext(
-        query,
-        result.words.length,
-        'datamuse_find_synonyms',
-        "No lexical alternatives matched the effective query. Try datamuse_find_words with means_like set to the same word for looser related meanings, or datamuse_list_reference with topic='relations'.",
-        { word: input.word.trim(), relation: input.relation },
-      ),
+    const page = selectSearchPage(
+      query,
+      result.words,
+      'datamuse_find_synonyms',
+      "No lexical alternatives matched the effective query. Try datamuse_find_words with means_like set to the same word for looser related meanings, or datamuse_list_reference with topic='relations'.",
+      { word: input.word.trim(), relation: input.relation },
     );
-    return result;
+    ctx.enrich(page.enrichment);
+    return page.result;
   },
-  format: (result) => [{ type: 'text', text: renderJson(result, 'Datamuse upstream word data') }],
+  format: searchContent,
 });

@@ -5,7 +5,6 @@
 import { tool, z } from '@cyanheads/mcp-ts-core';
 import { JsonRpcErrorCode } from '@cyanheads/mcp-ts-core/errors';
 import { getDatamuseService } from '../../../services/datamuse/datamuse-service.js';
-import { renderJson } from '../../../services/datamuse/serialization.js';
 import {
   type DatamuseQuery,
   meansLikeSchema,
@@ -16,15 +15,17 @@ import {
 } from '../../../services/datamuse/types.js';
 import {
   optionalText,
-  searchContext,
+  searchContent,
+  searchControls,
   searchEnrichment,
   searchEnrichmentTrailer,
+  selectSearchPage,
 } from './search-support.js';
 
 /** Find exact or near English rhymes, optionally constrained by meaning and spelling. */
 export const findRhymesTool = tool('datamuse_find_rhymes', {
   description:
-    'Find exact or near English rhymes, optionally constrained by meaning and spelling. Exact and near describe Datamuse relations, not poetic suitability. Preserve upstream order and available metadata; empty results succeed and limits do not provide pagination.',
+    'Find exact or near English rhymes, optionally constrained by meaning and spelling. Exact and near describe Datamuse relations, not poetic suitability. Empty results succeed. Whole-row byte budgets and best-effort offsets preserve upstream order; rankings may change between calls.',
   annotations: { readOnlyHint: true, idempotentHint: true, openWorldHint: true },
   input: z
     .object({
@@ -137,8 +138,7 @@ export const findRhymesTool = tool('datamuse_find_rhymes', {
     const means_like = optionalText(input.means_like);
     const spelled_like = optionalText(input.spelled_like);
     const query: DatamuseQuery = {
-      limit: input.limit,
-      include_definitions: input.include_definitions,
+      ...searchControls(input),
       vocabulary: 'en',
       ...(means_like ? { means_like } : {}),
       ...(spelled_like ? { spelled_like } : {}),
@@ -160,13 +160,12 @@ export const findRhymesTool = tool('datamuse_find_rhymes', {
       "Call datamuse_list_reference with topic='combinations' for alternatives; datamuse_find_words with sounds_like set to the target explores similar sounds without requiring rhyme.",
     ].join(' ');
     const result = await getDatamuseService().search(query, ctx, 'datamuse_find_rhymes');
-    ctx.enrich(
-      searchContext(query, result.words.length, 'datamuse_find_rhymes', emptyNotice, {
-        word: input.word.trim(),
-        rhyme_type: input.rhyme_type,
-      }),
-    );
-    return result;
+    const page = selectSearchPage(query, result.words, 'datamuse_find_rhymes', emptyNotice, {
+      word: input.word.trim(),
+      rhyme_type: input.rhyme_type,
+    });
+    ctx.enrich(page.enrichment);
+    return page.result;
   },
-  format: (result) => [{ type: 'text', text: renderJson(result, 'Datamuse upstream word data') }],
+  format: searchContent,
 });

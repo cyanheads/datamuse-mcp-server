@@ -111,14 +111,97 @@ for (const { tool, input } of tools) {
       expect(textOf(result)).not.toContain('</script>');
     });
 
-    it.each([0, 1001, 1.5])('rejects invalid limit %s before I/O', async (limit) => {
+    it.each(
+      Array.from({ length: 8 }, (_, flags) => ({
+        include_definitions: Boolean(flags & 1),
+        include_pronunciation: Boolean(flags & 2),
+        include_ipa: Boolean(flags & 4),
+      })),
+    )('forwards all metadata options %j without changing raw tags', async (options) => {
+      const words = [
+        { word: 'flower', tags: ['pron: F L AW1 ER0  ', 'ipa_pron:fɫˈaʊɝ\t', 'future: unknown'] },
+        { word: 'absent' },
+      ];
+      const fetch = fakeJson(words);
+      const result = await runToolContract(tool, { ...input, ...options });
+      expect(result.isError).not.toBe(true);
+      const metadata = `psf${options.include_definitions ? 'd' : ''}${options.include_pronunciation || options.include_ipa ? 'r' : ''}`;
+      const params = new URL(String(fetch.mock.calls[0]?.[0])).searchParams;
+      expect(params.get('md')).toBe(metadata);
+      expect(params.get('ipa')).toBe(options.include_ipa ? '1' : null);
+      expect(dataOf(result)).toMatchObject({
+        words,
+        effectiveQuery: {
+          ...options,
+          include_pronunciation: options.include_pronunciation || options.include_ipa,
+          metadata,
+        },
+      });
+      expect(fences(result)).toContainEqual({ words });
+      expect(fences(result)).toContainEqual(dataOf(result).effectiveQuery);
+    });
+
+    it('slices offset pages without inventing exhaustion and stops navigation at index 999', async () => {
+      vi.useFakeTimers();
+      const words = Array.from({ length: 1000 }, (_, index) => ({ word: String(index) }));
+      fakeJson(words);
+      const last = await runToolContract(tool, { ...input, limit: 1000, offset: 999 });
+      expect(dataOf(last)).toMatchObject({
+        words: [words[999]],
+        returnedCount: 1,
+        truncated: false,
+      });
+      expect(dataOf(last).nextOffset).toBeUndefined();
+      expect(dataOf(last).notice).toEqual(expect.stringContaining('API result ceiling'));
+      fakeJson(words.slice(0, 5));
+      const pending = runToolContract(tool, { ...input, offset: 5 });
+      await vi.runAllTimersAsync();
+      const past = await pending;
+      expect(dataOf(past)).toMatchObject({ words: [], returnedCount: 0, truncated: false });
+      expect(dataOf(past).nextOffset).toBeUndefined();
+      expect(JSON.stringify(past)).not.toMatch(/exhausted|totalCount/);
+    });
+
+    it.each([-1, 1000, 0.5])('rejects invalid offset %s before I/O', async (offset) => {
       const fetch = fakeJson([]);
       assertFailure(
-        await runToolContract(tool, { ...input, limit }),
+        await runToolContract(tool, { ...input, offset }),
         JsonRpcErrorCode.InvalidParams,
       );
       expect(fetch).not.toHaveBeenCalled();
     });
+
+    it('returns a single oversized row intact with disclosure and progress', async () => {
+      const row = {
+        word: 'huge',
+        defs: ['n\t' + '<`😀'.repeat(20000)],
+        future: { nested: [null, true] },
+      };
+      fakeJson([row]);
+      const result = await runToolContract(tool, input);
+      expect(result.isError).not.toBe(true);
+      expect(dataOf(result)).toMatchObject({
+        words: [row],
+        returnedCount: 1,
+        truncated: false,
+        nextOffset: 1,
+      });
+      expect(dataOf(result).notice).toEqual(expect.stringContaining('oversized row'));
+      expect(fences(result)).toContainEqual({ words: [row] });
+      expect(textOf(result)).toContain(String(dataOf(result).notice));
+    });
+
+    it.each([0, -1, 1.5, Number.NaN, Number.POSITIVE_INFINITY, Number.MAX_SAFE_INTEGER + 1])(
+      'rejects invalid limit %s before I/O',
+      async (limit) => {
+        const fetch = fakeJson([]);
+        assertFailure(
+          await runToolContract(tool, { ...input, limit }),
+          JsonRpcErrorCode.InvalidParams,
+        );
+        expect(fetch).not.toHaveBeenCalled();
+      },
+    );
 
     it.each([400, 401, 403, 404, 409, 422, 429, 302, 418])(
       'renders declared HTTP %s classification and recovery',
@@ -260,6 +343,185 @@ for (const { tool, input } of tools) {
 }
 
 describe('search query semantics', () => {
+  it('measures exact serialized boundary bytes after metadata and escaping, selecting one prefix for both surfaces', async () => {
+    vi.useFakeTimers();
+    const options = {
+      means_like: '<`😀',
+      include_definitions: true,
+      include_pronunciation: true,
+      include_ipa: true,
+    };
+    const rows = [
+      { word: 'first', tags: ['pron: A1 ', 'ipa_pron:ɑ'] },
+      { word: 'second', defs: [''] },
+    ];
+    fakeJson(rows);
+    const base = await runToolContract(findWordsTool, options);
+    const padding = 64000 - Buffer.byteLength(JSON.stringify(base.content));
+    expect(padding).toBeGreaterThan(0);
+    for (const delta of [-1, 0, 1]) {
+      const words = [rows[0]!, { ...rows[1]!, defs: ['x'.repeat(padding + delta)] }];
+      fakeJson(words);
+      const pending = runToolContract(findWordsTool, options);
+      await vi.runAllTimersAsync();
+      const result = await pending;
+      expect(result.isError).not.toBe(true);
+      expect(Buffer.byteLength(JSON.stringify(result.content))).toBeLessThanOrEqual(64000);
+      expect(Buffer.byteLength(JSON.stringify(result.structuredContent))).toBeLessThanOrEqual(
+        64000,
+      );
+      expect(dataOf(result)).toMatchObject({
+        words: words.slice(0, delta > 0 ? 1 : 2),
+        truncated: delta > 0,
+      });
+      expect(fences(result)).toContainEqual({ words: dataOf(result).words });
+      if (delta <= 0) expect(Buffer.byteLength(JSON.stringify(result.content))).toBe(64000 + delta);
+      else expect(dataOf(result).nextOffset).toBe(1);
+    }
+  });
+
+  it('re-runs changed rankings and walks multiple byte-cut pages to a past-end offset', async () => {
+    vi.useFakeTimers();
+    const words = Array.from({ length: 5 }, (_, index) => ({
+      word: String(index),
+      defs: ['<`😀'.repeat(2500)],
+    }));
+    let upstream = words;
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => Response.json(upstream)),
+    );
+    const call = async (offset: number) => {
+      const pending = runToolContract(findWordsTool, { spelled_like: '*', offset, limit: 20 });
+      await vi.runAllTimersAsync();
+      return pending;
+    };
+    const first = await call(0);
+    const next = dataOf(first).nextOffset as number;
+    expect(next).toBe(1);
+    upstream = [words[1]!, words[0]!, ...words.slice(2)];
+    const second = await call(next);
+    expect(dataOf(second).words).toEqual([words[0]]);
+    expect(dataOf(second).notice).toEqual(expect.stringContaining('Rankings may change'));
+    const third = await call(dataOf(second).nextOffset as number);
+    expect(dataOf(third).words).toEqual([words[2]]);
+    const last = await call(4);
+    expect(dataOf(last).words).toEqual([words[4]]);
+    expect(dataOf(last).nextOffset).toBeUndefined();
+    const past = await call(5);
+    expect(dataOf(past)).toMatchObject({ words: [], returnedCount: 0, truncated: false });
+    expect(dataOf(past).nextOffset).toBeUndefined();
+  });
+  it('cuts an existing large definitions call before either serialized surface exceeds 64000 bytes', async () => {
+    fakeJson(
+      Array.from({ length: 100 }, (_, index) => ({
+        word: String(index),
+        defs: ['n\t' + 'large'.repeat(1000)],
+      })),
+    );
+    const result = await runToolContract(findRhymesTool, {
+      word: 'day',
+      limit: 100,
+      include_definitions: true,
+    });
+    expect(result.isError).not.toBe(true);
+    expect(Buffer.byteLength(JSON.stringify(result.content))).toBeLessThanOrEqual(64000);
+    expect(Buffer.byteLength(JSON.stringify(result.structuredContent))).toBeLessThanOrEqual(64000);
+  });
+  it.each([
+    { tool: findRhymesTool, input: { word: 'ice cream', rhyme_type: 'exact' as const } },
+    { tool: findRhymesTool, input: { word: 'ice cream', rhyme_type: 'near' as const } },
+    { tool: findSynonymsTool, input: { word: 'look after' } },
+    {
+      tool: findWordsTool,
+      input: { relations: [{ relation: 'synonyms' as const, word: 'look after' }] },
+    },
+  ])('explains empty phrase relations in $tool.name', async ({ tool, input }) => {
+    fakeJson([]);
+    const result = await runToolContract(tool, input);
+    expect(result.isError).not.toBe(true);
+    expect(dataOf(result).notice).toEqual(
+      expect.stringContaining('Phrase relations may have limited coverage'),
+    );
+    expect(dataOf(result).notice).toEqual(expect.stringContaining('means_like'));
+    expect(textOf(result)).toContain(String(dataOf(result).notice));
+    if (tool === findRhymesTool)
+      expect(dataOf(result).notice).toEqual(expect.stringContaining('final word'));
+  });
+
+  it('bounds whole rows on each assembled surface and advances through byte-cut pages', async () => {
+    vi.useFakeTimers();
+    const words = Array.from({ length: 20 }, (_, index) => ({
+      word: String(index),
+      tags: ['pron: F L AW1 ER0 ', 'ipa_pron:fɫˈaʊɝ'],
+      defs: ['n\t' + '<`😀\\"\n'.repeat(400)],
+    }));
+    const fetch = fakeJson(words);
+    const first = await runToolContract(findRhymesTool, {
+      word: 'day',
+      limit: 20,
+      include_pronunciation: true,
+      include_ipa: true,
+    });
+    expect(first.isError).not.toBe(true);
+    expect(Buffer.byteLength(JSON.stringify(first.structuredContent))).toBeLessThanOrEqual(64000);
+    expect(Buffer.byteLength(JSON.stringify(first.content))).toBeLessThanOrEqual(64000);
+    const count = dataOf(first).returnedCount as number;
+    expect(count).toBeGreaterThan(0);
+    expect(count).toBeLessThan(20);
+    expect(dataOf(first)).toMatchObject({
+      truncated: true,
+      nextOffset: count,
+      words: words.slice(0, count),
+    });
+    expect(fences(first)).toContainEqual({ words: words.slice(0, count) });
+    const pending = runToolContract(findRhymesTool, { word: 'day', limit: 20, offset: count });
+    await vi.runAllTimersAsync();
+    const second = await pending;
+    expect(dataOf(second).words).toEqual(
+      words.slice(count, count + (dataOf(second).returnedCount as number)),
+    );
+    expect(new URL(String(fetch.mock.calls[1]?.[0])).searchParams.get('max')).toBe(
+      String(count + 20),
+    );
+  });
+
+  it.each(tools)(
+    'clamps limits and forwards resolved metadata in $tool.name',
+    async ({ tool, input }) => {
+      const fetch = fakeJson([]);
+      const result = await runToolContract(tool, {
+        ...input,
+        limit: Number.MAX_SAFE_INTEGER,
+        offset: 999,
+        include_ipa: true,
+      });
+      expect(result.isError).not.toBe(true);
+      expect(dataOf(result).effectiveQuery).toMatchObject({
+        limit: 1000,
+        requestedLimit: Number.MAX_SAFE_INTEGER,
+        offset: 999,
+        include_pronunciation: true,
+        include_ipa: true,
+        metadata: 'psfr',
+        ipa: 1,
+      });
+      expect(
+        Object.fromEntries(new URL(String(fetch.mock.calls[0]?.[0])).searchParams),
+      ).toMatchObject({ max: '1000', md: 'psfr', ipa: '1' });
+      expect(fences(result)).toContainEqual(dataOf(result).effectiveQuery);
+    },
+  );
+  it('preserves accepted nonempty phrase relations without rewriting targets', async () => {
+    const words = [{ word: 'phrase match', tags: ['unknown'], future: { nested: [1, null] } }];
+    const fetch = fakeJson(words);
+    const result = await runToolContract(findRhymesTool, { word: ' ice cream ' });
+    expect(dataOf(result).words).toEqual(words);
+    expect(dataOf(result).effectiveQuery).toMatchObject({ word: 'ice cream' });
+    expect(new URL(String(fetch.mock.calls[0]?.[0])).searchParams.get('rel_rhy')).toBe('ice cream');
+    expect(dataOf(result).notice).toBeUndefined();
+    expect(fences(result)).toContainEqual({ words });
+  });
   it.each([
     ['exact_rhyme', 'rhy'],
     ['near_rhyme', 'nry'],
@@ -453,7 +715,10 @@ describe('search query semantics', () => {
     expect(dataOf(result).effectiveQuery).toEqual({
       means_like: 'word',
       limit: 20,
+      offset: 0,
       include_definitions: false,
+      include_pronunciation: false,
+      include_ipa: false,
       vocabulary: 'en',
       metadata: 'psf',
     });
@@ -502,7 +767,7 @@ describe('search query semantics', () => {
     const fetch = fakeJson([]);
     for (const input of [
       { means_like: 'sea', topics: ['a', 'b', 'c', 'd', 'e', 'f'] },
-      { means_like: 'sea', offset: 2 },
+      { means_like: 'sea', unknown: 2 },
     ]) {
       assertFailure(await runToolContract(findWordsTool, input), JsonRpcErrorCode.InvalidParams);
     }

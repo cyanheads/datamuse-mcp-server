@@ -5,7 +5,6 @@
 import { tool, z } from '@cyanheads/mcp-ts-core';
 import { JsonRpcErrorCode } from '@cyanheads/mcp-ts-core/errors';
 import { getDatamuseService } from '../../../services/datamuse/datamuse-service.js';
-import { renderJson } from '../../../services/datamuse/serialization.js';
 import {
   type DatamuseQuery,
   meansLikeSchema,
@@ -17,15 +16,17 @@ import {
 } from '../../../services/datamuse/types.js';
 import {
   optionalText,
-  searchContext,
+  searchContent,
+  searchControls,
   searchEnrichment,
   searchEnrichmentTrailer,
+  selectSearchPage,
 } from './search-support.js';
 
 /** Find words by combined meaning, sound, spelling, and named lexical relations. */
 export const findWordsTool = tool('datamuse_find_words', {
   description:
-    'Find words by combined meaning, sound, spelling, and named lexical relations. Supply at least one hard constraint; relations form a conjunction, including repeated entries. Context and topics only affect ordering and require single words. Spanish supports meaning, sound, and spelling; relations require English. Empty results succeed; limits provide neither totals nor pagination.',
+    'Find words by combined meaning, sound, spelling, and named lexical relations. Supply at least one hard constraint; relations form a conjunction, including repeated entries. Context and topics only affect ordering and require single words. Spanish supports meaning, sound, and spelling; relations require English. Empty results succeed; byte budgets select whole rows and offsets re-run the query without stable rankings or totals.',
   annotations: { readOnlyHint: true, idempotentHint: true, openWorldHint: true },
   input: z
     .object({
@@ -206,8 +207,7 @@ export const findWordsTool = tool('datamuse_find_words', {
     const left_context = optionalText(input.left_context);
     const right_context = optionalText(input.right_context);
     const query: DatamuseQuery = {
-      limit: input.limit,
-      include_definitions: input.include_definitions,
+      ...searchControls(input),
       vocabulary: input.vocabulary,
       ...(means_like ? { means_like } : {}),
       ...(sounds_like ? { sounds_like } : {}),
@@ -230,15 +230,14 @@ export const findWordsTool = tool('datamuse_find_words', {
     if (query.vocabulary === 'es' && query.relations?.length)
       throw ctx.fail('unsupported_vocabulary_relation');
     const result = await getDatamuseService().search(query, ctx, 'datamuse_find_words');
-    ctx.enrich(
-      searchContext(
-        query,
-        result.words.length,
-        'datamuse_find_words',
-        "No words matched the effective query. Re-run datamuse_find_words with fewer hard constraints or a broader spelled_like pattern; datamuse_list_reference with topic='combinations' explains alternatives.",
-      ),
+    const page = selectSearchPage(
+      query,
+      result.words,
+      'datamuse_find_words',
+      "No words matched the effective query. Re-run datamuse_find_words with fewer hard constraints or a broader spelled_like pattern; datamuse_list_reference with topic='combinations' explains alternatives.",
     );
-    return result;
+    ctx.enrich(page.enrichment);
+    return page.result;
   },
-  format: (result) => [{ type: 'text', text: renderJson(result, 'Datamuse upstream word data') }],
+  format: searchContent,
 });

@@ -8,6 +8,41 @@ import { renderJson } from '@/services/datamuse/serialization.js';
 import type { DatamuseQuery } from '@/services/datamuse/types.js';
 
 describe('Datamuse serialization', () => {
+  it.each(['//listen', 'c@t', 's#@p', '*+abc', 'b????-e', 'hipopatamus'])(
+    'preserves upstream spelling syntax %s as a single encoded value',
+    (pattern) => {
+      const url = buildSearchUrl({
+        vocabulary: 'en',
+        limit: 20,
+        include_definitions: false,
+        spelled_like: pattern,
+      });
+      expect(url.searchParams.get('sp')).toBe(pattern);
+      expect(url.hash).toBe('');
+      expect([...url.searchParams.keys()]).toEqual(['sp', 'max', 'md']);
+      if (pattern.includes('#')) expect(url.search).toContain('%23');
+      if (pattern.includes('+')) expect(url.search).toContain('%2B');
+      if (pattern.includes('/')) expect(url.search).toContain('%2F');
+    },
+  );
+
+  it('clamps before addition and requests only the available upstream ceiling', () => {
+    for (const [offset, limit, expected] of [
+      [0, 20, 20],
+      [50, 20, 70],
+      [999, 20, 1000],
+      [999, Number.MAX_SAFE_INTEGER, 1000],
+    ] as const) {
+      expect(
+        buildSearchUrl({
+          vocabulary: 'en',
+          include_definitions: false,
+          offset,
+          limit: limit!,
+        }).searchParams.get('max'),
+      ).toBe(String(expected));
+    }
+  });
   it('round-trips nested unknown values and hostile Markdown without opening HTML or extra fences', () => {
     const value = {
       words: [

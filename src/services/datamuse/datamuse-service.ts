@@ -12,11 +12,24 @@ import {
 import { createPacer, fetchWithTimeout, withRetry } from '@cyanheads/mcp-ts-core/utils';
 import {
   type DatamuseQuery,
+  metadataOptions,
   RELATION_CODES,
   type SearchToolName,
   type WordResult,
   wordResultSchema,
 } from './types.js';
+
+/** Indexed lookup outcome; upstream rows remain complete and separate from caller input. */
+export type WordInfoOutcome =
+  | { index: number; input: string; status: 'success'; row: WordResult }
+  | { index: number; input: string; status: 'failure'; reason: string; recovery: string }
+  | {
+      index: number;
+      input: string;
+      status: 'unprocessed';
+      reason: 'processing_cap' | 'deadline_exceeded';
+      recovery: string;
+    };
 
 /** Serialize only supported parameters against the immutable HTTPS endpoint. */
 export function buildSearchUrl(query: DatamuseQuery): URL {
@@ -33,8 +46,13 @@ export function buildSearchUrl(query: DatamuseQuery): URL {
     url.searchParams.append(`rel_${RELATION_CODES[entry.relation]}`, entry.word);
   if (query.topics?.length) url.searchParams.append('topics', query.topics.join(','));
   if (query.vocabulary === 'es') url.searchParams.append('v', 'es');
-  url.searchParams.append('max', String(query.limit));
-  url.searchParams.append('md', query.include_definitions ? 'psfd' : 'psf');
+  url.searchParams.append(
+    'max',
+    String(Math.min(1000, (query.offset ?? 0) + Math.min(1000, query.limit))),
+  );
+  const metadata = metadataOptions(query);
+  url.searchParams.append('md', metadata.metadata);
+  if (metadata.include_ipa) url.searchParams.append('ipa', '1');
   return url;
 }
 
@@ -110,8 +128,10 @@ export class DatamuseService {
     query: DatamuseQuery,
     ctx: Context,
     tool: SearchToolName,
+    request?: { echo: true; deadlineMs: number },
   ): Promise<{ words: WordResult[] }> {
     const url = buildSearchUrl(query);
+    if (request) url.searchParams.set('qe', 'sp');
     try {
       const words = await withRetry(
         async ({ signal, remainingMs }) =>
@@ -156,7 +176,7 @@ export class DatamuseService {
           maxRetries: 1,
           baseDelayMs: 1000,
           maxDelayMs: 5000,
-          deadlineMs: 20000,
+          deadlineMs: request?.deadlineMs ?? 20000,
           signal: ctx.signal,
           context: ctx,
           operation: 'datamuse.search',
@@ -166,6 +186,79 @@ export class DatamuseService {
     } catch (error) {
       throw safeError(error, tool, ctx.signal);
     }
+  }
+
+  /** Look up ten supplied spellings sequentially within one whole-call deadline. */
+  async lookup(
+    words: string[],
+    options: Pick<DatamuseQuery, 'include_definitions' | 'include_pronunciation' | 'include_ipa'>,
+    ctx: Context,
+  ): Promise<{ outcomes: WordInfoOutcome[] }> {
+    const deadline = Date.now() + 20000;
+    const outcomes: WordInfoOutcome[] = [];
+    for (const [index, value] of words.entries()) {
+      if (ctx.signal.aborted)
+        throw new McpError(JsonRpcErrorCode.RequestCancelled, 'Datamuse request was cancelled.');
+      const input = value.trim();
+      const remaining = deadline - Date.now();
+      if (index >= 10 || remaining <= 0) {
+        outcomes.push({
+          index,
+          input,
+          status: 'unprocessed',
+          reason: index >= 10 ? 'processing_cap' : 'deadline_exceeded',
+          recovery: 'Submit this word in a new lookup call.',
+        });
+        continue;
+      }
+      try {
+        const result = await this.search(
+          { ...options, spelled_like: input, vocabulary: 'en', limit: 1 },
+          ctx,
+          'datamuse_get_word_info',
+          { echo: true, deadlineMs: remaining },
+        );
+        const row = result.words.find(
+          (row) => row.tags?.includes('query') && row.word.toLowerCase() === input.toLowerCase(),
+        );
+        if (!row)
+          outcomes.push({
+            index,
+            input,
+            status: 'failure',
+            reason: 'missing_query_echo',
+            recovery: 'Check the supplied spelling and retry this word later.',
+          });
+        else outcomes.push({ index, input, status: 'success', row });
+      } catch (error) {
+        if (
+          ctx.signal.aborted ||
+          (error instanceof McpError && error.code === JsonRpcErrorCode.RequestCancelled)
+        )
+          throw error;
+        if (Date.now() >= deadline)
+          outcomes.push({
+            index,
+            input,
+            status: 'unprocessed',
+            reason: 'deadline_exceeded',
+            recovery: 'Submit this word in a new lookup call.',
+          });
+        else
+          outcomes.push({
+            index,
+            input,
+            status: 'failure',
+            reason:
+              error instanceof McpError && typeof error.data?.reason === 'string'
+                ? error.data.reason
+                : 'upstream_failure',
+            recovery:
+              'Retry this word later; consult datamuse_list_reference for availability guidance.',
+          });
+      }
+    }
+    return { outcomes };
   }
 
   /** Reject queued work and release pacing timers. */
