@@ -1,6 +1,6 @@
 # datamuse-mcp-server - Directory Structure
 
-Generated on: 2026-10-20 00:02:32
+Generated on: 2026-10-20 00:07:25
 
 ```text
 datamuse-mcp-server/
@@ -24,6 +24,7 @@ datamuse-mcp-server/
 │   ├── extensions.json
 │   └── settings.json
 ├── changelog/
+│   ├── 0.1.x/
 │   └── template.md
 ├── docs/
 │   └── design.md
@@ -163,6 +164,7 @@ datamuse-mcp-server/
 ├── biome.json
 ├── bun.lock
 ├── bunfig.toml
+├── CHANGELOG.md
 ├── CLAUDE.md
 ├── devcheck.config.json
 ├── Dockerfile
