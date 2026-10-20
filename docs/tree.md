@@ -1,6 +1,6 @@
 # datamuse-mcp-server - Directory Structure
 
-Generated on: 2026-10-20 06:58:52
+Generated on: 2026-10-20 07:15:52
 
 ```text
 datamuse-mcp-server/
@@ -25,6 +25,7 @@ datamuse-mcp-server/
 │   └── settings.json
 ├── changelog/
 │   ├── 0.1.x/
+│   ├── 0.2.x/
 │   └── template.md
 ├── docs/
 │   └── design.md

@@ -1,7 +1,7 @@
 {
   "manifest_version": "0.3",
   "name": "datamuse-mcp-server",
-  "version": "0.1.1",
+  "version": "0.2.0",
   "description": "Find rhymes, synonyms, sound-alikes, spelling matches, and word associations with Datamuse via MCP. STDIO or Streamable HTTP.",
   "author": { "name": "cyanheads" },
   "repository": { "type": "git", "url": "https://github.com/cyanheads/datamuse-mcp-server" },
