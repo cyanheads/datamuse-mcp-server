@@ -1,13 +1,13 @@
 <div align="center">
   <h1>@cyanheads/datamuse-mcp-server</h1>
   <p><b>Find rhymes, synonyms, sound-alikes, spelling matches, and word associations with Datamuse via MCP. STDIO or Streamable HTTP.</b>
-  <div>4 Tools • 0 Resources • 0 Prompts</div>
+  <div>5 Tools</div>
   </p>
 </div>
 
 <div align="center">
 
-[![Version](https://img.shields.io/badge/Version-0.1.1-blue.svg?style=flat-square)](./changelog/0.1.x/0.1.1.md) [![License](https://img.shields.io/badge/License-Apache%202.0-orange.svg?style=flat-square)](./LICENSE) [![Docker](https://img.shields.io/badge/Docker-ghcr.io-2496ED?style=flat-square&logo=docker&logoColor=white)](https://github.com/users/cyanheads/packages/container/package/datamuse-mcp-server) [![MCP SDK](https://img.shields.io/badge/MCP%20SDK-^2.3.1-green.svg?style=flat-square)](https://modelcontextprotocol.io/) [![npm](https://img.shields.io/npm/v/@cyanheads/datamuse-mcp-server?style=flat-square&logo=npm&logoColor=white)](https://www.npmjs.com/package/@cyanheads/datamuse-mcp-server) [![TypeScript](https://img.shields.io/badge/TypeScript-^7.0.2-3178C6.svg?style=flat-square)](https://www.typescriptlang.org/) [![Bun](https://img.shields.io/badge/Bun-v1.4.3-blueviolet.svg?style=flat-square)](https://bun.sh/)
+[![Version](https://img.shields.io/badge/Version-0.1.1-blue.svg?style=flat-square)](./CHANGELOG.md) [![License](https://img.shields.io/badge/License-Apache%202.0-orange.svg?style=flat-square)](./LICENSE) [![Docker](https://img.shields.io/badge/Docker-ghcr.io-2496ED?style=flat-square&logo=docker&logoColor=white)](https://github.com/users/cyanheads/packages/container/package/datamuse-mcp-server) [![MCP SDK](https://img.shields.io/badge/MCP%20SDK-^2.3.1-green.svg?style=flat-square)](https://modelcontextprotocol.io/) [![npm](https://img.shields.io/npm/v/@cyanheads/datamuse-mcp-server?style=flat-square&logo=npm&logoColor=white)](https://www.npmjs.com/package/@cyanheads/datamuse-mcp-server) [![TypeScript](https://img.shields.io/badge/TypeScript-^7.0.2-3178C6.svg?style=flat-square)](https://www.typescriptlang.org/) [![Bun](https://img.shields.io/badge/Bun-v1.4.3-blueviolet.svg?style=flat-square)](https://bun.sh/)
 
 </div>
 
@@ -33,46 +33,55 @@ Word finding for writing, editing, puzzles, and naming, powered by the [Datamuse
 | `datamuse_find_synonyms` | Find synonyms, antonyms, broader categories, or narrower kinds |
 | `datamuse_find_words` | Combine meaning, sound, spelling, and named lexical relations, with context and topic hints |
 | `datamuse_list_reference` | Read offline guidance on relations, metadata, combinations, and service limitations |
-
-Results are linguistic suggestions, with sense-dependent and sometimes guessed metadata. They do not establish dictionary completeness or poetic suitability.
+| `datamuse_get_word_info` | Look up raw metadata for supplied spellings, with indexed partial outcomes |
 
 ## Capability reference
 
 ### `datamuse_find_rhymes` <sub>tool</sub>
 
-- Required `word`; `rhyme_type` is `exact` (default) or `near`. Optional `means_like` and `spelled_like` constrain the same search.
-- English only. Exact searches never silently fall back to near rhymes.
+- Required `word`; `rhyme_type` is `exact` (default) or `near`, never blended; optional `means_like` and `spelled_like` narrow the same search. English only
+- Shared search controls: `limit` (default 20), `offset` (default 0), `include_definitions`, `include_pronunciation`, and `include_ipa` (metadata options default `false`). Rows carry whatever metadata Datamuse supplies
 
 ---
 
 ### `datamuse_find_synonyms` <sub>tool</sub>
 
-- Required `word`; `relation` is `synonyms` (default), `antonyms`, `broader`, or `narrower`.
-- English only. `broader` returns direct hypernyms; `narrower` returns direct hyponyms. Statistical associations are available through `datamuse_find_words`.
+- Required `word`; `relation` is `synonyms` (default), `antonyms`, `broader` (direct hypernyms), or `narrower` (direct hyponyms). English only
+- Same shared search controls as rhymes; statistical associations are the `associated` relation of `datamuse_find_words`
 
 ---
 
 ### `datamuse_find_words` <sub>tool</sub>
 
-- Supply at least one of `means_like`, `sounds_like`, `spelled_like`, or `relations: [{ relation, word }]`. Constraints form a conjunction; repeated relations are preserved, up to 14 entries.
-- Relations: `exact_rhyme`, `near_rhyme`, `synonyms`, `antonyms`, `broader`, `narrower`, `parts`, `wholes`, `nouns_modified_by`, `adjectives_describing`, `followers`, `predecessors`, `associated`, `homophones`, `consonant_match`. Call `datamuse_list_reference` for their directions.
-- Spelling supports upstream `*` and `?` patterns. `left_context`, `right_context`, and up to five nonblank `topics` affect ordering; each must be a single word without commas. These hints alone cannot start a search.
-- `vocabulary` is `en` (default) or `es`. Spanish supports meaning, sound, and spelling; relations require English.
+- At least one of `means_like`, `sounds_like`, `spelled_like` (upstream spelling patterns), or up to 14 `relations: [{ relation, word }]`, all conjoined; repeated relations are kept. `left_context`, `right_context`, and up to five `topics`, each a single word, affect ordering only
+- Relations: `exact_rhyme`, `near_rhyme`, `synonyms`, `antonyms`, `broader`, `narrower`, `parts`, `wholes`, `nouns_modified_by`, `adjectives_describing`, `followers`, `predecessors`, `associated`, `homophones`, `consonant_match`; `datamuse_list_reference` gives their directions
+- `vocabulary` is `en` (default) or `es`; Spanish takes meaning, sound, and spelling constraints, not relations. Rejections are typed: `missing_constraint`, `unsupported_vocabulary_relation`, `invalid_context_hint`
+
+Spelling patterns are interpreted by Datamuse using supported [OneLook syntax](https://onelook.com/thesaurus/#patterns):
+
+| Pattern | Meaning |
+|:--|:--|
+| `*`, `?` | Any length, or one character |
+| `//listen` | Anagrams, including phrases such as `lets in` |
+| `c@t`, `s#@p` | `@` matches one English vowel including y; `#` one consonant |
+| `*+abc` | Restrict letters to a, b, c; repetitions and spaces can occur |
+| `b????-e` | Five-character pattern excluding e |
+| `hipopatamus` | Similar spellings without wildcard syntax |
+
+For anagrams, call `datamuse_find_words` with `{"spelled_like":"//listen"}`. `+letters` restricts allowed letters and `-letters` excludes them; neither requires every listed letter.
 
 ---
 
+### `datamuse_get_word_info` <sub>tool</sub>
+
+Supply 1–100 nonblank `words`, each at most 200 characters. The first ten are processed sequentially through the shared request budget; later entries return `processing_cap`. One 20-second deadline includes all requests, retries and pacing. Completed results survive item failures; pending entries return `deadline_exceeded`. Caller cancellation stops the call.
+
+The same `include_definitions`, `include_pronunciation`, and `include_ipa` options apply. Each indexed outcome contains trimmed caller `input` and either a complete raw `row`, a failure reason with recovery, or an unprocessed reason. Only a `query`-tagged echo matching the supplied spelling under Unicode lowercase is accepted: `Ice Cream` can return raw `row.word='ice cream'`, while corrections are never substituted. Missing metadata stays absent, and duplicates keep their indices. Lookup output is complete on both MCP surfaces and has no search byte slicing.
+
 ### `datamuse_list_reference` <sub>tool</sub>
 
-- `topic` is `all` (default), `relations`, `metadata`, `combinations`, or `limitations`.
-- Returns complete static `sections` without a network request.
-
-### Search results
-
-All three search tools accept `limit` from 1–1000 (default 20) and `include_definitions` (default false). They return `words` in upstream order, plus `effectiveQuery`, `returnedCount`, `limitReached`, and any empty-result or cap `notice`.
-
-Each row has `word` and any available `score`, `numSyllables`, `tags`, `defs`, `defHeadword`, and additional upstream JSON properties. Missing metadata stays absent. Tags and definitions remain raw, including unknown tags, tabs, and whitespace. `f:` tags express frequency per million words; scores rank results within one query and cannot be compared across queries.
-
-Empty lists succeed. Reaching a limit means more matches may exist; there is no pagination, total-match count, or continuation token. A short list does not establish exhaustion. Every returned field is preserved in structured output and fenced JSON text.
+- `topic` is `all` (default), `relations`, `metadata`, `combinations`, or `limitations`
+- Returns static `sections: [{ topic, text }]` without a network request
 
 ## Features
 
@@ -80,26 +89,28 @@ Built on [`@cyanheads/mcp-ts-core`](https://github.com/cyanheads/mcp-ts-core): s
 
 Datamuse-specific:
 
-- Live queries to Datamuse's fixed HTTPS word endpoint, without a local mirror or persistent query store.
-- A shared process-local budget of one request per second and one in-flight request, with a bounded queue and retries. This conservative pacing does not guarantee a daily quota across processes or other users of the same egress address.
-- Parts of speech, syllables, frequency tags, and optional definitions, preserving sparse responses and upstream ranking.
+- Live queries to Datamuse's fixed HTTPS `/words` endpoint, with no local mirror or stored queries
+- One request budget shared by every tool and tenant: one start per second, one request in flight, a bounded queue, and one retry. It is process-local, so it does not account for other processes or other users of the same egress address
+- Results are corpus-derived suggestions with sense-dependent, sometimes guessed metadata (parts of speech, syllables, `f:` frequency per million words). They do not establish dictionary completeness or poetic suitability
 
 Agent-friendly output:
 
-- Effective query and resolved defaults on every successful search, with actionable empty-result and cap guidance.
-- Typed failures distinguish access, rate limits, malformed data, and upstream request errors. Upstream text is returned as data inside JSON fences.
+- Effective-query echo and honest caps: every search returns `effectiveQuery`, `returnedCount`, `limitReached`, and `truncated`, plus relevant notices and `nextOffset`. Positive safe-integer limits above 1000 are clamped with `requestedLimit` and effective `limit` echoed. Invalid integers reject before I/O
+- Whole-row navigation: `offset` accepts 0–999. Searches fetch `max=min(1000, offset+limit)` and select complete rows under 64,000 bytes per serialized MCP surface, including escaping and enrichment. A local byte cut sets `truncated=true`; re-run with `offset=nextOffset` when supplied. One oversized row is returned intact with a soft-budget notice and offset progress. API-cap notices are separate from byte cuts. Rankings can change between calls, so offsets are best-effort navigation with possible duplicates or gaps, never snapshots, stable pagination, totals, or proof of exhaustion. No continuation beyond index 999
+- Phrase relation recovery: phrase targets stay accepted and unchanged. When a relation query returns empty, guidance explains limited phrase coverage and suggests `means_like` or `sounds_like`; rhyme guidance also suggests explicitly trying the final word
+- Optional pronunciation: `include_pronunciation` appends `r` to `md`; `include_ipa` implies pronunciation and adds `ipa=1`. Raw `pron:` and `ipa_pron:` tags may both occur. ARPAbet stress digits mean 0 unstressed, 1 primary, 2 secondary; pronunciations may be guessed, sense-dependent, or absent
+- Lossless rows: `word` plus whatever `score`, `numSyllables`, `tags`, `defs`, `defHeadword`, and other fields Datamuse sent, unchanged and in upstream order, identical in `structuredContent` and the fenced JSON text. `score` ranks results within one query only
+- Typed failures: declared reasons for access errors, rate limits (`upstream_rate_limited` and `pacer_shed`, with `retryAfter`), malformed upstream data, and invalid input, each with a recovery hint
 
 ### Access, privacy, and attribution
 
-Datamuse currently documents keyless access up to **100,000 requests per day** and asks customer-facing applications to contact the provider. Its announced manually issued API-key transition has conflicting dates: the banner says **February 1, 2027**, while the usage section ends keyless access on **January 1, 2027**. Recheck the [Datamuse documentation](https://www.datamuse.com/api/) before either date. This server uses the current keyless API; no future credential format is documented or implemented, and the transition may interrupt access.
+Datamuse currently documents keyless access up to **100,000 requests per day** and asks customer-facing applications to contact it. It has announced manually issued API keys for early 2027, with conflicting dates: **January 1** in its usage section and **February 1** in its banner. No key format is documented yet, so this server uses the keyless API, and access may be interrupted at the switch.
 
-Queries leave this server and are sent to Datamuse, which says it temporarily logs them until the end of the following day. Server-level payload logging and telemetry are optional; review their settings before sending sensitive text.
+Queries are sent to Datamuse, which keeps a temporary log of them until the end of the following day. Server payload logging and telemetry are optional; review their settings before sending sensitive text.
 
-Word results and lexical metadata are provided by [Datamuse](https://www.datamuse.com/api/). See its documentation for contributing data sources and attribution requirements. The Apache-2.0 license covers this server's code; it does not grant additional rights to upstream data.
+Word results and lexical metadata come from [Datamuse](https://www.datamuse.com/api/); see its documentation for data sources and attribution requirements. The Apache-2.0 license covers this server's code, not the upstream data.
 
 ## Getting started
-
-### Self-Hosted / Local
 
 Add the following to your MCP client configuration file.
 
@@ -161,7 +172,7 @@ MCP_TRANSPORT_TYPE=http MCP_HTTP_PORT=3010 bun run start:http
 ### Prerequisites
 
 - [Bun v1.4.0](https://bun.sh/) or higher (or Node.js v24+).
-- No Datamuse credentials currently required; see the access transition above.
+- No Datamuse credentials are currently required; see [Access, privacy, and attribution](#access-privacy-and-attribution) for the announced key transition.
 
 ### Installation
 
@@ -232,7 +243,7 @@ See [`.env.example`](./.env.example) for every server setting and the common fra
 
 | Directory | Purpose |
 |:---|:---|
-| `src/mcp-server/tools/definitions` | Four tool definitions and shared search enrichment. |
+| `src/mcp-server/tools/definitions` | Five tool definitions and shared search enrichment. |
 | `src/services/datamuse` | Fixed-endpoint client, shared pacing, upstream schemas, and JSON rendering. |
 | `tests/` | Service, tool, and serialization tests. |
 | `docs/` | Surface design and generated directory tree. |

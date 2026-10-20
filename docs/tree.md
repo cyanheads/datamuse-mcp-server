@@ -1,6 +1,6 @@
 # datamuse-mcp-server - Directory Structure
 
-Generated on: 2026-10-20 00:07:25
+Generated on: 2026-10-20 06:58:52
 
 ```text
 datamuse-mcp-server/
@@ -140,6 +140,7 @@ datamuse-mcp-server/
 │   │           ├── find-rhymes.tool.ts
 │   │           ├── find-synonyms.tool.ts
 │   │           ├── find-words.tool.ts
+│   │           ├── get-word-info.tool.ts
 │   │           ├── list-reference.tool.ts
 │   │           └── search-support.ts
 │   ├── services/
@@ -151,8 +152,10 @@ datamuse-mcp-server/
 ├── tests/
 │   ├── services/
 │   │   ├── datamuse-service.test.ts
-│   │   └── serialization.test.ts
+│   │   ├── serialization.test.ts
+│   │   └── word-info.test.ts
 │   └── tools/
+│       ├── get-word-info.tool.test.ts
 │       ├── list-reference.tool.test.ts
 │       └── search-tools.test.ts
 ├── .dockerignore

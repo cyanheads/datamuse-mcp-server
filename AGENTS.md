@@ -46,11 +46,13 @@ Tailor suggestions to what's actually missing or stale — don't recite the full
 
 ### Datamuse tools and service
 
-Four tools are registered in `src/index.ts`: `datamuse_find_rhymes`, `datamuse_find_synonyms`, `datamuse_find_words`, and `datamuse_list_reference`. No resources or prompts are registered. Read `docs/design.md` before changing the surface.
+Five tools are registered in `src/index.ts`: `datamuse_find_rhymes`, `datamuse_find_synonyms`, `datamuse_find_words`, `datamuse_get_word_info`, and `datamuse_list_reference`. No resources or prompts are registered. Read `docs/design.md` before changing the surface.
 
-Search handlers normalize lexical input, call `getDatamuseService().search(query, ctx, toolName)`, and add `searchContext(...)` through `ctx.enrich`. Use `find-words.tool.ts` as the complete example. Every search returns `{ words }` plus `effectiveQuery`, `returnedCount`, `limitReached`, and any recovery notice.
+`datamuse_get_word_info` calls the same paced service with query echo. Keep one indexed outcome per input (1–100), process the first ten sequentially under one 20-second deadline, and preserve partial successes. Match query-tagged echoes using Unicode lowercase only; retain trimmed input and raw upstream row separately. Caller cancellation remains a framework error. Lookup outcomes are complete, never passed through search byte slicing.
 
-Preserve upstream order, omitted metadata, raw tags and definitions, and additional JSON fields. Scores rank a single query; they are never confidence. Empty results succeed; no totals or continuation exist. Use `renderJson` for complete fenced JSON on both the domain and enrichment text surfaces. Never truncate or reinterpret upstream strings.
+Search handlers normalize lexical input, call `getDatamuseService().search(query, ctx, toolName)`, and pass its rows through `selectSearchPage`. Enrich with that page's context and return its selected rows. Use `find-words.tool.ts` as the complete example. Every search returns `{ words }` plus `effectiveQuery`, `returnedCount`, `limitReached`, `truncated`, optional `nextOffset`, and relevant notices.
+
+Preserve upstream order, omitted metadata, raw tags and definitions, and additional JSON fields. Scores rank a single query; they are never confidence. Empty results succeed; no totals or stable pagination exist. `searchControls` resolves limits and pronunciation options; `selectSearchPage` selects one whole-row prefix against 64,000 bytes per serialized surface including enrichment. Offsets re-run upstream within indices 0–999; disclose byte cuts and oversized intact rows without claiming exhaustion. Use compact `renderJson` for complete fenced JSON on both domain and enrichment text surfaces. Never truncate or reinterpret upstream strings. Phrase relation inputs remain accepted; empty phrase queries get coverage guidance without automatic splitting.
 
 ### Server identity and lifecycle
 
@@ -138,6 +140,7 @@ src/
     find-rhymes.tool.ts
     find-synonyms.tool.ts
     find-words.tool.ts
+    get-word-info.tool.ts
     list-reference.tool.ts
     search-support.ts
 ```
@@ -230,6 +233,7 @@ When you complete a skill's checklist, check the boxes and add a completion time
 | `bun run changelog:check` | Verify `CHANGELOG.md` is in sync (used by devcheck) |
 | `bun run publish-mcp` | Publish registry metadata after npm publication (release workflow only) |
 | `bun run bundle` | Build, pack, and clean a `.mcpb` for one-click Claude Desktop install |
+| `bun run release:github` | Create the GitHub Release from the version's annotated tag — enforces the `v<VERSION>: <subject>` title and attaches the `.mcpb` bundle (release workflow only) |
 
 **CI is one file.** `.github/workflows/codeql.yml` (scaffolded) is the only GitHub Actions workflow: CodeQL is GitHub-owned end to end, and the file runs only while the repo's CodeQL *default setup* is turned off. Verification — `devcheck`, tests, the release gates — runs locally; don't add a workflow that re-runs it.
 
@@ -307,4 +311,6 @@ import { getDatamuseService } from '@/services/datamuse/datamuse-service.js';
 - [ ] `.codex-plugin/plugin.json` populated — `name`, `version`, `description`, `repository`, `license` from `package.json`; `interface.displayName` = the unscoped repo name (never the npm scope — `lint:packaging` enforces this); `interface.shortDescription` from `package.json` description
 - [ ] `.codex-plugin/mcp.json` updated — server name key is the unscoped repo name; every user-supplied variable (API key, contact email, instance URL) is listed in `env_vars` so Codex forwards it from the user's environment. Never write `"KEY": ""` into `env` — an empty value replaces the user's exported key and is read as unset
 - [ ] `.claude-plugin/plugin.json` populated — `name`, `version`, `description`, `author`, `repository`, `license`, `keywords` from `package.json`; inline `mcpServers` entry keyed by the unscoped repo name. Every user-supplied variable is declared under `userConfig` (`type`, `title`, `description`; `sensitive: true` for keys and tokens; `required: true` or `default: ""`) and referenced from `env` as `"KEY": "${user_config.<option>}"` — mirror the `user_config` block in `manifest.json`. Never write `"KEY": ""` into `env`
+- [ ] Relation added or renamed: `RELATION_CODES` in `src/services/datamuse/types.ts`, the `relations` section of `datamuse_list_reference`, and the README relation list all agree
+- [ ] Search tool added or renamed: `SearchToolName`, the per-tool recovery strings, and the `truncationAllowlist` in `devcheck.config.json` all name it
 - [ ] `npm run devcheck` passes

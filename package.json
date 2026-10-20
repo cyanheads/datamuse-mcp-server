@@ -65,7 +65,12 @@
     "datamuse",
     "rhymes",
     "synonyms",
-    "word-finding"
+    "word-finding",
+    "thesaurus",
+    "rhyming-dictionary",
+    "crossword",
+    "poetry",
+    "writing"
   ],
   "repository": {
     "type": "git",
