@@ -308,6 +308,7 @@ describe('pacing, Retry-After, deadlines, and cancellation', () => {
     await vi.advanceTimersByTimeAsync(5000);
     expect(await queued).toMatchObject({
       code: JsonRpcErrorCode.RateLimited,
+      message: "The caller's wait budget ran out before a datamuse request slot opened.",
       data: { reason: 'pacer_shed', retryAfter: expect.any(Number) },
     });
     expect(fetch).toHaveBeenCalledTimes(1);

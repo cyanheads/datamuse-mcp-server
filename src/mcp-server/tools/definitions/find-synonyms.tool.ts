@@ -107,7 +107,6 @@ export const findSynonymsTool = tool('datamuse_find_synonyms', {
       when: 'Shared queue full or wait budget exhausted',
       recovery:
         "Wait for retryAfter, then re-run datamuse_find_synonyms; use datamuse_list_reference with topic='limitations' for the shared request budget.",
-      retryable: false,
       thrownBy: 'service',
     },
     {

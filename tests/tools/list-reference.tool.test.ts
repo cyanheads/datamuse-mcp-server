@@ -46,7 +46,8 @@ describe('datamuse_list_reference', () => {
     expect(data.sections[1]?.text).toContain('per million words');
     expect(data.sections[1]?.text).toContain('ipa=1');
     expect(data.sections[2]?.text).toContain('conjunction, not a union');
-    expect(data.sections[3]?.text).toContain('January 1 and February 1');
+    expect(data.sections[3]?.text).toContain('February 1, 2027');
+    expect(data.sections[3]?.text).not.toContain('January 1');
     expect(data.sections[3]?.text).toContain('no continuation beyond index 999');
     expect(data.sections[0]?.text).toContain('Phrase relations may have limited coverage');
     expect(data.sections[1]?.text).toContain(
@@ -58,6 +59,16 @@ describe('datamuse_list_reference', () => {
     expect(data.sections[2]?.text).toContain('including y');
     expect(data.sections[2]?.text).toContain('neither requires every listed letter');
     expect(data.sections[3]?.text).toContain('64,000-byte budget');
+  });
+
+  it('explains how to interpret raw query echo tags', async () => {
+    const result = await runToolContract(listReferenceTool, { topic: 'metadata' });
+    const data = listReferenceTool.output.parse(result.structuredContent);
+    const text = data.sections[0]?.text;
+    expect(text).toContain('query marks the echo');
+    expect(text).toContain('spellcor: tags are upstream spelling suggestions');
+    expect(text).toContain('f:0.000000');
+    expect(text).toContain('A missing f: tag leaves frequency unknown.');
   });
 
   it.each([{ topic: 'unknown' }, { topic: 'ALL' }, { extra: true }])(

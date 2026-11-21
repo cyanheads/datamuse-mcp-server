@@ -66,8 +66,13 @@ const statusReasons: Readonly<Record<number, string>> = {
   429: 'upstream_rate_limited',
 };
 
-/** Discard upstream text, URLs, and causes while retaining framework classifications. */
-function safeError(error: unknown, tool: SearchToolName, callerSignal: AbortSignal): unknown {
+/** Retain framework classifications and only an explicitly trusted message. */
+function safeError(
+  error: unknown,
+  tool: SearchToolName,
+  callerSignal: AbortSignal,
+  localMessage?: string,
+): unknown {
   if (!(error instanceof McpError)) {
     if (callerSignal.aborted) return error;
     return serviceUnavailable('Datamuse response could not be read.', {
@@ -107,9 +112,10 @@ function safeError(error: unknown, tool: SearchToolName, callerSignal: AbortSign
     };
   }
   const message =
-    error.code === JsonRpcErrorCode.RequestCancelled
+    localMessage ??
+    (error.code === JsonRpcErrorCode.RequestCancelled
       ? 'Datamuse request was cancelled.'
-      : 'Datamuse request could not be completed.';
+      : 'Datamuse request could not be completed.');
   return new McpError(error.code, message, data);
 }
 
@@ -184,14 +190,25 @@ export class DatamuseService {
       );
       return { words };
     } catch (error) {
-      throw safeError(error, tool, ctx.signal);
+      // The inner sanitizer strips shedKind from every fetch failure. The pacer sets it outside that boundary.
+      const localMessage =
+        error instanceof McpError &&
+        error.code === JsonRpcErrorCode.RateLimited &&
+        error.data?.reason === 'pacer_shed' &&
+        typeof error.data.shedKind === 'string'
+          ? error.message
+          : undefined;
+      throw safeError(error, tool, ctx.signal, localMessage);
     }
   }
 
   /** Look up ten supplied spellings sequentially within one whole-call deadline. */
   async lookup(
     words: string[],
-    options: Pick<DatamuseQuery, 'include_definitions' | 'include_pronunciation' | 'include_ipa'>,
+    options: Pick<
+      DatamuseQuery,
+      'vocabulary' | 'include_definitions' | 'include_pronunciation' | 'include_ipa'
+    >,
     ctx: Context,
   ): Promise<{ outcomes: WordInfoOutcome[] }> {
     const deadline = Date.now() + 20000;
@@ -213,7 +230,7 @@ export class DatamuseService {
       }
       try {
         const result = await this.search(
-          { ...options, spelled_like: input, vocabulary: 'en', limit: 1 },
+          { ...options, spelled_like: input, limit: 1 },
           ctx,
           'datamuse_get_word_info',
           { echo: true, deadlineMs: remaining },

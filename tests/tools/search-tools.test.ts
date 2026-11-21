@@ -2,7 +2,7 @@
  * @fileoverview Network tool contracts through real Datamuse service and fake HTTP.
  * @module tests/tools/search-tools.test
  */
-import { JsonRpcErrorCode } from '@cyanheads/mcp-ts-core/errors';
+import { JsonRpcErrorCode, McpError } from '@cyanheads/mcp-ts-core/errors';
 import { runToolContract } from '@cyanheads/mcp-ts-core/testing';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { findRhymesTool } from '@/mcp-server/tools/definitions/find-rhymes.tool.js';
@@ -237,6 +237,73 @@ for (const { tool, input } of tools) {
       },
     );
 
+    it.each([undefined, '1', 'Mon, 19 Oct 2026 12:00:03 GMT'])(
+      'reports sanitized HTTP 429 with Retry-After %s',
+      async (retryAfter) => {
+        vi.useFakeTimers();
+        vi.setSystemTime(new Date('2026-10-19T12:00:00Z'));
+        const headers = new Headers({ 'X-Upstream': 'private-header' });
+        if (retryAfter !== undefined) headers.set('Retry-After', retryAfter);
+        const fetch = vi.fn(
+          async () =>
+            new Response('private-body https://example.test/private', {
+              status: 429,
+              statusText: 'private-status',
+              headers,
+            }),
+        );
+        vi.stubGlobal('fetch', fetch);
+        const pending = runToolContract(tool, input);
+        await vi.runAllTimersAsync();
+        const result = await pending;
+        const contract = tool.errors!.find((entry) => entry.reason === 'upstream_rate_limited')!;
+        assertFailure(
+          result,
+          JsonRpcErrorCode.RateLimited,
+          'upstream_rate_limited',
+          contract.recovery,
+        );
+        expect(result.structuredContent).toMatchObject({
+          error: {
+            message: 'Datamuse request could not be completed.',
+            data: { status: 429, retryAttempts: 2, retryable: true },
+          },
+        });
+        if (retryAfter === undefined) {
+          expect(result.structuredContent).not.toHaveProperty('error.data.retryAfter');
+          expect(textOf(result)).not.toContain('retry after ');
+        } else {
+          expect(result.structuredContent).toHaveProperty('error.data.retryAfter', retryAfter);
+          expect(textOf(result)).toContain(`retry after \`${retryAfter}\``);
+        }
+        expect(JSON.stringify(result)).not.toMatch(
+          /private-(?:body|header|status)|example\.test|api\.datamuse/,
+        );
+        expect(fetch).toHaveBeenCalledTimes(2);
+      },
+    );
+
+    it('scrubs a transport error carrying pacer-like metadata', async () => {
+      vi.stubGlobal(
+        'fetch',
+        vi.fn().mockRejectedValue(
+          new McpError(JsonRpcErrorCode.RateLimited, 'Private transport message', {
+            reason: 'pacer_shed',
+            shedKind: 'wait_projected',
+            retryAfter: 2,
+          }),
+        ),
+      );
+      const result = await runToolContract(tool, input);
+      assertFailure(result, JsonRpcErrorCode.RateLimited, 'pacer_shed');
+      expect(result.structuredContent).toHaveProperty(
+        'error.message',
+        'Datamuse request could not be completed.',
+      );
+      expect(result.structuredContent).not.toHaveProperty('error.data.shedKind');
+      expect(textOf(result)).not.toContain('Private transport message');
+    });
+
     it.each(['not json', '{}', '[{"word":42}]', '[{"word":"valid"},{"word":"bad","tags":null}]'])(
       'rejects malformed payload atomically: %s',
       async (body) => {
@@ -255,29 +322,37 @@ for (const { tool, input } of tools) {
       },
     );
 
-    it('returns declared queue-shed recovery when the shared queue is full', async () => {
+    it('explains a projected wait-budget shed and exposes the delay on both surfaces', async () => {
       vi.useFakeTimers();
       const controller = new AbortController();
-      vi.stubGlobal(
-        'fetch',
-        vi.fn(
-          (_input: Parameters<typeof globalThis.fetch>[0], init?: RequestInit) =>
-            new Promise<Response>((_resolve, reject) => {
-              init?.signal?.addEventListener('abort', () => reject(init.signal?.reason), {
-                once: true,
-              });
-            }),
-        ),
+      const fetch = vi.fn(
+        (_input: Parameters<typeof globalThis.fetch>[0], init?: RequestInit) =>
+          new Promise<Response>((_resolve, reject) => {
+            init?.signal?.addEventListener('abort', () => reject(init.signal?.reason), {
+              once: true,
+            });
+          }),
       );
-      const calls = Array.from({ length: 21 }, () =>
+      vi.stubGlobal('fetch', fetch);
+      const calls = Array.from({ length: 6 }, () =>
         runToolContract(tool, input, { context: { signal: controller.signal } }),
       );
       await vi.advanceTimersByTimeAsync(0);
       const result = await runToolContract(tool, input);
-      const contract = tool.errors!.find((entry) => entry.reason === 'pacer_shed')!;
-      assertFailure(result, contract.code, contract.reason, contract.recovery);
       controller.abort();
       await Promise.all(calls);
+      const contract = tool.errors!.find((entry) => entry.reason === 'pacer_shed')!;
+      assertFailure(result, JsonRpcErrorCode.RateLimited, 'pacer_shed', contract.recovery);
+      const message = "No datamuse request slot available within the caller's wait budget.";
+      expect(result.structuredContent).toMatchObject({
+        error: { message, data: { retryAfter: 6 } },
+      });
+      expect(textOf(result)).toContain(message);
+      expect(textOf(result)).toContain('retry after 6');
+      expect(result.structuredContent).not.toHaveProperty('error.data.retryable');
+      expect(result.structuredContent).not.toHaveProperty('error.data.shedKind');
+      expect(contract).not.toHaveProperty('retryable');
+      expect(fetch).toHaveBeenCalledTimes(1);
     });
 
     it.each([500, 503])(

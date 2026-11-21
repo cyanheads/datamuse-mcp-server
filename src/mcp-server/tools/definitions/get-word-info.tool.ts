@@ -7,6 +7,7 @@ import { getDatamuseService } from '../../../services/datamuse/datamuse-service.
 import { renderJson } from '../../../services/datamuse/serialization.js';
 import {
   searchInputFields,
+  vocabularySchema,
   wordResultSchema,
   wordSchema,
 } from '../../../services/datamuse/types.js';
@@ -14,7 +15,7 @@ import {
 /** Retrieve raw metadata for supplied words without substituting spelling corrections. */
 export const getWordInfoTool = tool('datamuse_get_word_info', {
   description:
-    'Look up syllables, frequency, optional definitions and pronunciation for supplied English words or phrases. Accepts 1–100 inputs; processes the first ten sequentially within one 20-second deadline. Returns indexed outcomes for every input, preserving duplicates, failures and unprocessed entries. Query echo may contain guessed metadata; never substitutes spelling corrections.',
+    'Look up syllables, frequency, optional definitions and pronunciation for supplied English or Spanish words or phrases. Accepts 1–100 inputs and processes the first ten sequentially within one 20-second deadline. Returns indexed outcomes for every input. The query tag marks the supplied form, which can have guessed metadata. spellcor: tags suggest other spellings that can name unrelated words. f:0.000000 can reflect limited corpus coverage. See datamuse_list_reference topic=metadata.',
   annotations: { readOnlyHint: true, idempotentHint: true, openWorldHint: true },
   input: z
     .object({
@@ -28,9 +29,11 @@ export const getWordInfoTool = tool('datamuse_get_word_info', {
       include_definitions: searchInputFields.include_definitions,
       include_pronunciation: searchInputFields.include_pronunciation,
       include_ipa: searchInputFields.include_ipa,
+      vocabulary: vocabularySchema.default('en').describe('Vocabulary for the whole lookup batch.'),
     })
     .strict(),
   output: z.object({
+    vocabulary: vocabularySchema.describe('Resolved vocabulary for the lookup batch.'),
     outcomes: z
       .array(
         z
@@ -78,8 +81,10 @@ export const getWordInfoTool = tool('datamuse_get_word_info', {
         'One complete indexed outcome per supplied input; no rows or values are truncated.',
       ),
   }),
-  handler(input, ctx) {
-    return getDatamuseService().lookup(input.words, input, ctx);
+  async handler(input, ctx) {
+    const { words, ...options } = input;
+    const result = await getDatamuseService().lookup(words, options, ctx);
+    return { vocabulary: options.vocabulary, ...result };
   },
   format: (result) => [{ type: 'text', text: renderJson(result, 'Datamuse word information') }],
 });

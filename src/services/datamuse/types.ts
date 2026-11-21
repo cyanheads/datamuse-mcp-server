@@ -27,6 +27,9 @@ export const RELATION_CODES = {
 export const relationSchema = z.enum(
   Object.keys(RELATION_CODES) as [keyof typeof RELATION_CODES, ...(keyof typeof RELATION_CODES)[]],
 );
+/** English and Spanish Datamuse vocabularies. */
+export const vocabularySchema = z.enum(['en', 'es']);
+
 /** Shared input fields; handlers trim lexical inputs after schema validation. */
 export const searchInputFields = {
   limit: z
@@ -139,7 +142,7 @@ export interface DatamuseQuery {
   sounds_like?: string;
   spelled_like?: string;
   topics?: string[];
-  vocabulary: 'en' | 'es';
+  vocabulary: z.infer<typeof vocabularySchema>;
 }
 /** Resolve metadata once for URL construction and the effective query echo. */
 export function metadataOptions(

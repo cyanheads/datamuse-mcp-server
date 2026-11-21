@@ -18,7 +18,12 @@ afterEach(() => {
   vi.unstubAllGlobals();
   vi.useRealTimers();
 });
-const options = { include_definitions: false, include_pronunciation: false, include_ipa: false };
+const options = {
+  vocabulary: 'en',
+  include_definitions: false,
+  include_pronunciation: false,
+  include_ipa: false,
+} as const;
 
 it('characterizes sparse raw search metadata before extending the service', async () => {
   vi.stubGlobal(
@@ -29,7 +34,7 @@ it('characterizes sparse raw search metadata before extending the service', asyn
   );
   await expect(
     service.search(
-      { ...options, vocabulary: 'en', limit: 1, spelled_like: 'Ice Cream' },
+      { ...options, limit: 1, spelled_like: 'Ice Cream' },
       createMockContext(),
       'datamuse_find_words',
     ),
@@ -43,6 +48,7 @@ it('keeps caller identity, duplicates, raw rows and metadata options through pac
   const fetch = vi.fn(async (url: URL) => {
     starts.push(Date.now());
     expect(url.searchParams.get('qe')).toBe('sp');
+    expect(url.searchParams.has('v')).toBe(false);
     expect(url.searchParams.get('max')).toBe('1');
     expect(url.searchParams.get('md')).toBe('psfdr');
     expect(url.searchParams.get('ipa')).toBe('1');

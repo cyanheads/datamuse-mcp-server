@@ -10,36 +10,82 @@ import {
   initDatamuseService,
 } from '@/services/datamuse/datamuse-service.js';
 
-beforeEach(() => initDatamuseService());
+beforeEach(() => {
+  vi.useFakeTimers();
+  initDatamuseService();
+});
 afterEach(() => {
   disposeDatamuseService();
   vi.unstubAllGlobals();
+  vi.useRealTimers();
 });
-it('preserves a complete raw echo and caller spelling on both surfaces', async () => {
+
+function assertOutputParity(result: Awaited<ReturnType<typeof runToolContract>>): void {
+  const text = result.content.find((block) => block.type === 'text')?.text;
+  const json = text?.match(/\n```json\n([^\n]+)\n```$/)?.[1];
+  if (json === undefined) throw new Error('Expected a fenced JSON result.');
+  expect(JSON.parse(json)).toEqual(result.structuredContent);
+}
+
+it.each([{}, { vocabulary: 'en' as const }])(
+  'preserves a complete English echo and caller spelling on both surfaces with %j',
+  async (options) => {
+    const row = {
+      word: 'ice cream',
+      tags: ['query', 'pron: AY1 S '],
+      future: { nested: [null, '```<x>'] },
+    };
+    const fetch = vi.fn(async (_url: URL) => Response.json([row]));
+    vi.stubGlobal('fetch', fetch);
+    const result = await runToolContract(getWordInfoTool, {
+      words: [' Ice Cream '],
+      include_ipa: true,
+      ...options,
+    });
+    expect(result.isError).not.toBe(true);
+    expect(fetch.mock.calls.map(([url]) => url.searchParams.has('v'))).toEqual([false]);
+    expect(result.structuredContent).toEqual({
+      vocabulary: 'en',
+      outcomes: [{ index: 0, input: 'Ice Cream', status: 'success', row }],
+    });
+    assertOutputParity(result);
+  },
+);
+
+it('routes the complete Spanish batch and preserves echoes and failures on both surfaces', async () => {
   const row = {
-    word: 'ice cream',
-    tags: ['query', 'pron: AY1 S '],
-    future: { nested: [null, '```<x>'] },
+    word: 'corazón',
+    numSyllables: 3,
+    tags: ['query', 'f:191.289594'],
+    future: { nested: [{ pronunciation: ['raw'] }] },
   };
-  vi.stubGlobal(
-    'fetch',
-    vi.fn(async () => Response.json([row])),
+  const fetch = vi.fn(async (url: URL) =>
+    Response.json(url.searchParams.get('sp') === 'Corazón' ? [row] : [{ word: 'hola' }]),
   );
-  const result = await runToolContract(getWordInfoTool, {
-    words: [' Ice Cream '],
-    include_ipa: true,
+  vi.stubGlobal('fetch', fetch);
+  const pending = runToolContract(getWordInfoTool, {
+    words: [' Corazón ', 'hola'],
+    vocabulary: 'es',
   });
+  await vi.advanceTimersByTimeAsync(1000);
+  const result = await pending;
   expect(result.isError).not.toBe(true);
-  expect(result.structuredContent).toEqual({
-    outcomes: [{ index: 0, input: 'Ice Cream', status: 'success', row }],
-  });
-  const text = result.content
-    .filter((b) => b.type === 'text')
-    .map((b) => b.text)
-    .join('\n');
-  expect(JSON.parse(text.split('```json\n')[1]!.split('\n```')[0]!)).toEqual(
-    result.structuredContent,
-  );
+  expect(fetch.mock.calls.map(([url]) => url.searchParams.get('v'))).toEqual(['es', 'es']);
+  const expected = {
+    vocabulary: 'es',
+    outcomes: [
+      { index: 0, input: 'Corazón', status: 'success', row },
+      {
+        index: 1,
+        input: 'hola',
+        status: 'failure',
+        reason: 'missing_query_echo',
+        recovery: 'Check the supplied spelling and retry this word later.',
+      },
+    ],
+  };
+  expect(result.structuredContent).toEqual(expected);
+  assertOutputParity(result);
 });
 
 it.each([[], [{ word: 'correction', tags: ['query'] }], [{ word: 4 }]].map((raw) => ({ raw })))(
@@ -49,9 +95,13 @@ it.each([[], [{ word: 'correction', tags: ['query'] }], [{ word: 4 }]].map((raw)
       'fetch',
       vi.fn(async () => Response.json(raw)),
     );
-    const result = await runToolContract(getWordInfoTool, { words: ['supplied'] });
+    const result = await runToolContract(getWordInfoTool, {
+      words: ['supplied'],
+      vocabulary: 'es',
+    });
     expect(result.isError).not.toBe(true);
     expect(result.structuredContent).toMatchObject({
+      vocabulary: 'es',
       outcomes: [
         {
           index: 0,
@@ -63,15 +113,25 @@ it.each([[], [{ word: 'correction', tags: ['query'] }], [{ word: 4 }]].map((raw)
         },
       ],
     });
-    const text = result.content
-      .filter((b) => b.type === 'text')
-      .map((b) => b.text)
-      .join('\n');
-    expect(JSON.parse(text.split('```json\n')[1]!.split('\n```')[0]!)).toEqual(
-      result.structuredContent,
-    );
+    assertOutputParity(result);
   },
 );
+it('rejects an unsupported vocabulary before network I/O', async () => {
+  const fetch = vi.fn();
+  vi.stubGlobal('fetch', fetch);
+  const result = await runToolContract(getWordInfoTool, {
+    words: ['test'],
+    vocabulary: 'enwiki' as 'en',
+  });
+  expect(result.isError).toBe(true);
+  expect(result.structuredContent).toMatchObject({
+    error: { data: { reason: 'invalid_arguments' } },
+  });
+  expect(result.content).toEqual([
+    expect.objectContaining({ type: 'text', text: expect.stringContaining('invalid_arguments') }),
+  ]);
+  expect(fetch).not.toHaveBeenCalled();
+});
 it.each(
   [[], Array.from({ length: 101 }, () => 'x'), [' '], ['x'.repeat(201)]].map((words) => ({
     words,

@@ -12,6 +12,7 @@ import {
   searchInputFields,
   searchOutputSchema,
   spelledLikeSchema,
+  vocabularySchema,
   wordSchema,
 } from '../../../services/datamuse/types.js';
 import {
@@ -77,8 +78,7 @@ export const findWordsTool = tool('datamuse_find_words', {
         .describe(
           'Single word following a result as an ordering hint, not an adjacency filter; blank means unset.',
         ),
-      vocabulary: z
-        .enum(['en', 'es'])
+      vocabulary: vocabularySchema
         .default('en')
         .describe('English or Spanish; all relations require English.'),
     })
@@ -156,7 +156,6 @@ export const findWordsTool = tool('datamuse_find_words', {
       when: 'Shared queue full or wait budget exhausted',
       recovery:
         "Wait for retryAfter, then re-run datamuse_find_words; use datamuse_list_reference with topic='limitations' for the shared request budget.",
-      retryable: false,
       thrownBy: 'service',
     },
     {

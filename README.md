@@ -7,7 +7,7 @@
 
 <div align="center">
 
-[![Version](https://img.shields.io/badge/Version-0.2.0-blue.svg?style=flat-square)](./CHANGELOG.md) [![License](https://img.shields.io/badge/License-Apache%202.0-orange.svg?style=flat-square)](./LICENSE) [![Docker](https://img.shields.io/badge/Docker-ghcr.io-2496ED?style=flat-square&logo=docker&logoColor=white)](https://github.com/users/cyanheads/packages/container/package/datamuse-mcp-server) [![MCP SDK](https://img.shields.io/badge/MCP%20SDK-^2.3.1-green.svg?style=flat-square)](https://modelcontextprotocol.io/) [![npm](https://img.shields.io/npm/v/@cyanheads/datamuse-mcp-server?style=flat-square&logo=npm&logoColor=white)](https://www.npmjs.com/package/@cyanheads/datamuse-mcp-server) [![TypeScript](https://img.shields.io/badge/TypeScript-^7.0.2-3178C6.svg?style=flat-square)](https://www.typescriptlang.org/) [![Bun](https://img.shields.io/badge/Bun-v1.4.3-blueviolet.svg?style=flat-square)](https://bun.sh/)
+[![Version](https://img.shields.io/badge/Version-0.2.0-blue.svg?style=flat-square)](./CHANGELOG.md) [![License](https://img.shields.io/badge/License-Apache%202.0-orange.svg?style=flat-square)](./LICENSE) [![Docker](https://img.shields.io/badge/Docker-ghcr.io-2496ED?style=flat-square&logo=docker&logoColor=white)](https://github.com/users/cyanheads/packages/container/package/datamuse-mcp-server) [![MCP SDK](https://img.shields.io/badge/MCP%20SDK-^2.4.0-green.svg?style=flat-square)](https://modelcontextprotocol.io/) [![npm](https://img.shields.io/npm/v/@cyanheads/datamuse-mcp-server?style=flat-square&logo=npm&logoColor=white)](https://www.npmjs.com/package/@cyanheads/datamuse-mcp-server) [![TypeScript](https://img.shields.io/badge/TypeScript-^7.0.2-3178C6.svg?style=flat-square)](https://www.typescriptlang.org/) [![Bun](https://img.shields.io/badge/Bun-v1.4.4-blueviolet.svg?style=flat-square)](https://bun.sh/)
 
 </div>
 
@@ -34,6 +34,8 @@ Word finding for writing, editing, puzzles, and naming, powered by the [Datamuse
 | `datamuse_find_words` | Combine meaning, sound, spelling, and named lexical relations, with context and topic hints |
 | `datamuse_list_reference` | Read offline guidance on relations, metadata, combinations, and service limitations |
 | `datamuse_get_word_info` | Look up raw metadata for supplied spellings, with indexed partial outcomes |
+
+The [Datamuse guide](./skills/datamuse-guide/SKILL.md) covers constrained searches, rhyme fallbacks, and partial lookups. Plugin installs and the MCPB bundle include it. MCP clients can discover it through the Skills extension or `resources/list`.
 
 ## Capability reference
 
@@ -76,7 +78,9 @@ For anagrams, call `datamuse_find_words` with `{"spelled_like":"//listen"}`. `+l
 
 Supply 1–100 nonblank `words`, each at most 200 characters. The first ten are processed sequentially through the shared request budget; later entries return `processing_cap`. One 20-second deadline includes all requests, retries and pacing. Completed results survive item failures; pending entries return `deadline_exceeded`. Caller cancellation stops the call.
 
-The same `include_definitions`, `include_pronunciation`, and `include_ipa` options apply. Each indexed outcome contains trimmed caller `input` and either a complete raw `row`, a failure reason with recovery, or an unprocessed reason. Only a `query`-tagged echo matching the supplied spelling under Unicode lowercase is accepted: `Ice Cream` can return raw `row.word='ice cream'`, while corrections are never substituted. Missing metadata stays absent, and duplicates keep their indices. Lookup output is complete on both MCP surfaces and has no search byte slicing.
+Set `vocabulary` to `en` (default) or `es` for the whole batch. The response includes the resolved `vocabulary`. The same `include_definitions`, `include_pronunciation`, and `include_ipa` options apply. Each indexed outcome contains trimmed caller `input` and either a complete raw `row`, a failure reason with recovery, or an unprocessed reason. Only a `query`-tagged echo matching the supplied spelling under Unicode lowercase is accepted: `Ice Cream` can return raw `row.word='ice cream'`, while corrections are never substituted. Missing metadata stays absent, and duplicates keep their indices. Lookup output is complete on both MCP surfaces and has no search byte slicing.
+
+The `query` tag marks the supplied form, which can have guessed metadata. `spellcor:` tags are suggestions and can point to unrelated words. A reported `f:0.000000` applies to the exact form and can reflect limited corpus coverage. A missing `f:` tag leaves frequency unknown.
 
 ### `datamuse_list_reference` <sub>tool</sub>
 
@@ -104,7 +108,7 @@ Agent-friendly output:
 
 ### Access, privacy, and attribution
 
-Datamuse currently documents keyless access up to **100,000 requests per day** and asks customer-facing applications to contact it. It has announced manually issued API keys for early 2027, with conflicting dates: **January 1** in its usage section and **February 1** in its banner. No key format is documented yet, so this server uses the keyless API, and access may be interrupted at the switch.
+Datamuse currently documents keyless access up to **100,000 requests per day** and asks customer-facing applications to contact it. It has announced that manually issued API keys will be required starting **February 1, 2027**. No key format is documented yet, so this server uses the keyless API, and access may be interrupted at the switch.
 
 Queries are sent to Datamuse, which keeps a temporary log of them until the end of the following day. Server payload logging and telemetry are optional; review their settings before sending sensitive text.
 
@@ -112,94 +116,26 @@ Word results and lexical metadata come from [Datamuse](https://www.datamuse.com/
 
 ## Getting started
 
-Add the following to your MCP client configuration file.
+Add it to Claude Code:
 
-```json
-{
-  "mcpServers": {
-    "datamuse-mcp-server": {
-      "type": "stdio",
-      "command": "bunx",
-      "args": ["@cyanheads/datamuse-mcp-server@latest"],
-      "env": {
-        "MCP_TRANSPORT_TYPE": "stdio",
-        "MCP_LOG_LEVEL": "info"
-      }
-    }
-  }
-}
+```sh
+claude mcp add datamuse-mcp-server -- npx -y @cyanheads/datamuse-mcp-server
 ```
 
-Or with npx (no Bun required):
+For other clients, add this to the MCP config file:
 
 ```json
 {
   "mcpServers": {
     "datamuse-mcp-server": {
-      "type": "stdio",
       "command": "npx",
-      "args": ["-y", "@cyanheads/datamuse-mcp-server@latest"],
-      "env": {
-        "MCP_TRANSPORT_TYPE": "stdio",
-        "MCP_LOG_LEVEL": "info"
-      }
+      "args": ["-y", "@cyanheads/datamuse-mcp-server"]
     }
   }
 }
 ```
 
-Or with Docker:
-
-```json
-{
-  "mcpServers": {
-    "datamuse-mcp-server": {
-      "type": "stdio",
-      "command": "docker",
-      "args": ["run", "-i", "--rm", "-e", "MCP_TRANSPORT_TYPE=stdio", "ghcr.io/cyanheads/datamuse-mcp-server:latest"]
-    }
-  }
-}
-```
-
-For Streamable HTTP, set the transport and start the server:
-
-```sh
-MCP_TRANSPORT_TYPE=http MCP_HTTP_PORT=3010 bun run start:http
-# Server listens at http://localhost:3010/mcp
-```
-
-### Prerequisites
-
-- [Bun v1.4.0](https://bun.sh/) or higher (or Node.js v24+).
-- No Datamuse credentials are currently required; see [Access, privacy, and attribution](#access-privacy-and-attribution) for the announced key transition.
-
-### Installation
-
-1. **Clone the repository:**
-
-```sh
-git clone https://github.com/cyanheads/datamuse-mcp-server.git
-```
-
-2. **Navigate into the directory:**
-
-```sh
-cd datamuse-mcp-server
-```
-
-3. **Install dependencies:**
-
-```sh
-bun install
-```
-
-4. **Configure environment:**
-
-```sh
-cp .env.example .env
-# edit .env for transport, authentication, logging, or telemetry overrides
-```
+The npm package requires Node.js 24 or later. For Docker or a source build, see [Running the server](#running-the-server).
 
 ## Configuration
 
@@ -221,6 +157,15 @@ See [`.env.example`](./.env.example) for every server setting and the common fra
 
 ### Local development
 
+- **Clone and install** with [Bun 1.4.4](https://bun.sh/) or later and Node.js 24 or later:
+
+  ```sh
+  git clone https://github.com/cyanheads/datamuse-mcp-server.git
+  cd datamuse-mcp-server
+  bun install
+  cp .env.example .env
+  ```
+
 - **Build and run the production version**:
 
   ```sh
@@ -238,6 +183,14 @@ See [`.env.example`](./.env.example) for every server setting and the common fra
   bun run devcheck  # Lints, formats, type-checks, and more
   bun run test      # Runs the test suite
   ```
+
+### Docker
+
+```sh
+docker run --rm -p 3010:3010 ghcr.io/cyanheads/datamuse-mcp-server:latest
+```
+
+The image serves Streamable HTTP at `http://localhost:3010/mcp`. For a stdio client, set `"command": "docker"` and `"args": ["run", "-i", "--rm", "-e", "MCP_TRANSPORT_TYPE=stdio", "ghcr.io/cyanheads/datamuse-mcp-server:latest"]`. To build the image locally, run `docker build -t datamuse-mcp-server .`. Use `--build-arg OTEL_ENABLED=false` to omit the OpenTelemetry dependencies.
 
 ## Project structure
 
